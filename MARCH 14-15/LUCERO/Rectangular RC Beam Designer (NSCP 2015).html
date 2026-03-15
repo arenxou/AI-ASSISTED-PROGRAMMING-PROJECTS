@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSCP 2015 Beam Design - 3D Visualization</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        h1 {
+            width: 100%;
+            text-align: center;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .input-section {
+            flex: 1;
+            min-width: 300px;
+        }
+        .output-section {
+            flex: 1.5;
+            min-width: 400px;
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .results-box {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #3498db;
+            margin-bottom: 20px;
+        }
+        .results-box p {
+            margin: 8px 0;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            width: 100%;
+            min-height: 400px;
+            background: #e9ecef;
+            border: 1px dashed #bdc3c7;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .controls-hint {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            pointer-events: none;
+        }
+        .error {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .warning {
+            color: #d35400;
+            font-weight: bold;
+        }
+        .success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+    </style>
+    
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+<div class="container">
+    <h1>NSCP 2015 Rectangular Beam Designer (3D)</h1>
+    
+    <div class="input-section">
+        <h3>Input Parameters</h3>
+        <div class="form-group">
+            <label>Factored Moment, Mu (kN·m):</label>
+            <input type="number" id="mu" value="150" step="any">
+        </div>
+        <div class="form-group">
+            <label>Concrete Strength, f'c (MPa):</label>
+            <input type="number" id="fc" value="28" step="any">
+        </div>
+        <div class="form-group">
+            <label>Yield Strength of Steel, fy (MPa):</label>
+            <input type="number" id="fy" value="414" step="any">
+        </div>
+        <div class="form-group">
+            <label>Beam Width, b (mm):</label>
+            <input type="number" id="b" value="250" step="any">
+        </div>
+        <div class="form-group">
+            <label>Total Height, h (mm):</label>
+            <input type="number" id="h" value="450" step="any">
+        </div>
+        <div class="form-group">
+            <label>Effective Depth, d (mm):</label>
+            <input type="number" id="d" value="380" step="any">
+        </div>
+        <div class="form-group">
+            <label>Main Rebar Diameter (mm):</label>
+            <input type="number" id="db" value="20" step="any">
+        </div>
+        <div class="form-group">
+            <label>Stirrup Diameter (mm):</label>
+            <input type="number" id="ds" value="10" step="any">
+        </div>
+        <button id="calcBtn">Calculate & Visualize</button>
+    </div>
+
+    <div class="output-section">
+        <h3>Calculation Results</h3>
+        <div class="results-box" id="results">
+            <p>Enter values and click calculate.</p>
+        </div>
+        <h3>Interactive 3D Cross-Section</h3>
+        <div id="canvas-container">
+            <div class="controls-hint">Left Click: Rotate | Right Click: Pan | Scroll: Zoom</div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // --- Three.js Setup ---
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xe9ecef);
+
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 5000);
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(200, 500, 300);
+    scene.add(dirLight);
+
+    let beamGroup = new THREE.Group();
+    scene.add(beamGroup);
+
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    // --- Design Logic ---
+    function calculateDesign() {
+        const Mu = parseFloat(document.getElementById('mu').value) * 1e6;
+        const fc = parseFloat(document.getElementById('fc').value);
+        const fy = parseFloat(document.getElementById('fy').value);
+        const b = parseFloat(document.getElementById('b').value);
+        const h = parseFloat(document.getElementById('h').value);
+        const d = parseFloat(document.getElementById('d').value);
+        const db = parseFloat(document.getElementById('db').value);
+        const ds = parseFloat(document.getElementById('ds').value); // Stirrup dia
+        const resultsDiv = document.getElementById('results');
+        
+        const phi = 0.90;
+        const Rn = Mu / (phi * b * Math.pow(d, 2));
+        const discriminant = 1 - (2 * Rn) / (0.85 * fc);
+        
+        if (discriminant < 0) {
+            resultsDiv.innerHTML = `<p class="error">Error: Section requires compression reinforcement. Increase dimensions or f'c.</p>`;
+            drawBeam3D(b, h, d, db, ds, []);
+            return;
+        }
+        
+        const rhoRequired = (0.85 * fc / fy) * (1 - Math.sqrt(discriminant));
+        let As = rhoRequired * b * d;
+        
+        const AsMin1 = (0.25 * Math.sqrt(fc) / fy) * b * d;
+        const AsMin2 = (1.4 / fy) * b * d;
+        const AsMin = Math.max(AsMin1, AsMin2);
+        
+        let controllingCondition = "Calculated Required";
+        if (As < AsMin) {
+            As = AsMin;
+            controllingCondition = "Minimum Reinforcement (NSCP 409.6.1.2)";
+        }
+        
+        let beta1 = 0.85;
+        if (fc > 28) {
+            beta1 = 0.85 - 0.05 * ((fc - 28) / 7);
+            if (beta1 < 0.65) beta1 = 0.65;
+        }
+        
+        const a = (As * fy) / (0.85 * fc * b);
+        const c = a / beta1;
+        const strain_t = 0.003 * ((d - c) / c);
+        
+        let strainMessage = `<span class="success">Tension-controlled (φ = 0.90)</span>`;
+        if (strain_t < 0.005) {
+            strainMessage = `<span class="error">Transition/Compression controlled! εt = ${strain_t.toFixed(4)}.</span>`;
+        }
+
+        const Ab = (Math.PI / 4) * Math.pow(db, 2);
+        let nBars = Math.ceil(As / Ab);
+        if (nBars < 2) nBars = 2;
+        const AsProvided = nBars * Ab;
+
+        // --- SPACING AND LAYERING LOGIC WITH STIRRUPS ---
+        const sideCover = 40; // Assumed 40mm clear cover to STIRRUPS
+        const s_min = Math.max(25, db); // Minimum clear spacing between main bars
+        
+        // Available width inside the stirrups (subtract cover, stirrup dia on both sides, and half the main bar dia on both sides for c-to-c spacing)
+        const w_avail_clear = b - (2 * sideCover) - (2 * ds); 
+        const w_avail_centers = w_avail_clear - db; 
+        
+        // Max bars per layer calculation
+        let maxBarsPerLayer = Math.floor((w_avail_clear + s_min) / (db + s_min));
+        if (maxBarsPerLayer < 1) maxBarsPerLayer = 1;
+
+        // Distribute bars evenly across required layers
+        let numLayers = Math.ceil(nBars / maxBarsPerLayer);
+        let layers = new Array(numLayers).fill(0);
+        for(let i = 0; i < nBars; i++) {
+            layers[i % numLayers]++; 
+        }
+
+        const n_bottom = layers[0];
+        const actual_clear_spacing = (n_bottom > 1) ? (w_avail_centers - (n_bottom - 1) * db) / (n_bottom - 1) : 0;
+
+        // NSCP Crack Control (Max Spacing) limit
+        const fs = (2/3) * fy;
+        const s_max_c2c = Math.min(380 * (280 / fs) - 2.5 * (sideCover + ds), 300 * (280 / fs));
+        const s_max_clear = s_max_c2c - db; 
+
+        let spacingMsg = `<span class="success">OK</span>`;
+        if (w_avail_clear < db) {
+             spacingMsg = `<span class="error">Beam width too small to fit even 1 bar with required cover & stirrups!</span>`;
+        } else if (actual_clear_spacing < s_min && n_bottom > 1) {
+            spacingMsg = `<span class="error">Failed (Min required: ${s_min} mm)</span>`;
+        } else if (actual_clear_spacing > s_max_clear && n_bottom > 1) {
+            spacingMsg = `<span class="warning">Exceeds Max Limit (${s_max_clear.toFixed(1)} mm) for crack control. Consider more, smaller bars.</span>`;
+        }
+
+        resultsDiv.innerHTML = `
+            <p><strong>Required As:</strong> ${As.toFixed(2)} mm² (${controllingCondition})</p>
+            <p><strong>Steel Strain (εt):</strong> ${strain_t.toFixed(5)} - ${strainMessage}</p>
+            <p><strong>Provided Bars:</strong> ${nBars} - Ø${db}mm distributed in ${numLayers} layer(s) (As = ${AsProvided.toFixed(2)} mm²)</p>
+            <p><strong>Actual Clear Spacing:</strong> ${n_bottom > 1 ? actual_clear_spacing.toFixed(1) + ' mm' : 'N/A'} - Spacing is ${spacingMsg}</p>
+        `;
+        
+        drawBeam3D(b, h, d, db, ds, layers);
+    }
+
+    // --- 3D Drawing Logic ---
+    function drawBeam3D(b, h, d, db, ds, layers) {
+        scene.remove(beamGroup);
+        beamGroup = new THREE.Group();
+        scene.add(beamGroup);
+
+        const beamLength = 1000; 
+
+        // 1. Concrete Block
+        const concreteGeo = new THREE.BoxGeometry(b, h, beamLength);
+        const concreteMat = new THREE.MeshStandardMaterial({ 
+            color: 0xa0a0a0, 
+            transparent: true, 
+            opacity: 0.35,
+            roughness: 0.8
+        });
+        const concreteMesh = new THREE.Mesh(concreteGeo, concreteMat);
+        
+        const edges = new THREE.EdgesGeometry(concreteGeo);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x333333 }));
+        beamGroup.add(concreteMesh);
+        beamGroup.add(line);
+
+        const sideCover = 40; 
+        
+        // 2. Draw Stirrups (Spaced along the beam length)
+        const stW = b - (2 * sideCover) - ds; // Center-to-center width of stirrup legs
+        const stH = h - (2 * sideCover) - ds; // Center-to-center height of stirrup legs
+        const stMat = new THREE.MeshStandardMaterial({ color: 0x7f8c8d, metalness: 0.4, roughness: 0.6 });
+        
+        // Render 5 stirrups for visual representation
+        for (let k = 0; k < 5; k++) {
+            const zPos = -beamLength/2 + 100 + k * 200; 
+            
+            const topBotGeo = new THREE.CylinderGeometry(ds/2, ds/2, stW, 8);
+            const sideGeo = new THREE.CylinderGeometry(ds/2, ds/2, stH, 8);
+            
+            const topMesh = new THREE.Mesh(topBotGeo, stMat);
+            topMesh.rotation.z = Math.PI / 2;
+            topMesh.position.set(0, stH/2, zPos);
+            beamGroup.add(topMesh);
+            
+            const botMesh = new THREE.Mesh(topBotGeo, stMat);
+            botMesh.rotation.z = Math.PI / 2;
+            botMesh.position.set(0, -stH/2, zPos);
+            beamGroup.add(botMesh);
+            
+            const leftMesh = new THREE.Mesh(sideGeo, stMat);
+            leftMesh.position.set(-stW/2, 0, zPos);
+            beamGroup.add(leftMesh);
+            
+            const rightMesh = new THREE.Mesh(sideGeo, stMat);
+            rightMesh.position.set(stW/2, 0, zPos);
+            beamGroup.add(rightMesh);
+        }
+
+        // 3. Main Rebars (Multi-Layer)
+        const totalBars = layers.reduce((a, b) => a + b, 0);
+        
+        if (totalBars > 0) {
+            const rebarGeo = new THREE.CylinderGeometry(db / 2, db / 2, beamLength, 16);
+            const rebarMat = new THREE.MeshStandardMaterial({ 
+                color: 0x2c3e50, 
+                metalness: 0.7,
+                roughness: 0.3
+            });
+
+            const verticalClearSpacing = 25; 
+            const layerVerticalPitch = db + verticalClearSpacing; 
+            
+            // Calculate centroid for depth alignment
+            let weightedSum = 0;
+            for(let i = 0; i < layers.length; i++) {
+                weightedSum += layers[i] * (i * layerVerticalPitch);
+            }
+            const yBar = weightedSum / totalBars; 
+
+            // Align centroid to effective depth
+            const centroidY = (h / 2) - d;
+            const bottomLayerY = centroidY - yBar;
+
+            for (let i = 0; i < layers.length; i++) {
+                const nBarsInLayer = layers[i];
+                if (nBarsInLayer === 0) continue;
+
+                const availableCenterWidth = b - (2 * sideCover) - (2 * ds) - db;
+                let spacing = 0;
+                if (nBarsInLayer > 1) {
+                    spacing = availableCenterWidth / (nBarsInLayer - 1);
+                }
+                const startX = -availableCenterWidth / 2;
+                const currentY = bottomLayerY + (i * layerVerticalPitch);
+
+                for (let j = 0; j < nBarsInLayer; j++) {
+                    const rebarMesh = new THREE.Mesh(rebarGeo, rebarMat);
+                    rebarMesh.rotation.x = Math.PI / 2; 
+                    rebarMesh.position.set(startX + (j * spacing), currentY, 0);
+                    beamGroup.add(rebarMesh);
+                }
+            }
+        }
+
+        const maxDim = Math.max(b, h, beamLength);
+        camera.position.set(maxDim * 0.8, maxDim * 0.8, maxDim * 1.2);
+        controls.target.set(0, 0, 0);
+        controls.update();
+    }
+
+    document.getElementById('calcBtn').addEventListener('click', calculateDesign);
+    setTimeout(calculateDesign, 100);
+</script>
+
+</body>
+</html>
